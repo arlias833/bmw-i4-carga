@@ -1,0 +1,445 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#10243b">
+<title>BMW i4 | Planificador de carga</title>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color:#17283c;background:#edf2f7}
+*{box-sizing:border-box}
+body{margin:0}
+main{max-width:1000px;margin:auto;padding:18px}
+header{background:#10243b;color:white;padding:25px;border-radius:16px}
+h1{font-size:25px;margin:0}
+h2{font-size:19px;margin-top:0}
+p{line-height:1.5}
+.card{background:white;border-radius:15px;padding:20px;margin-top:17px;box-shadow:0 2px 9px #0000000a}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:13px}
+label{font-size:13px;font-weight:650;display:block}
+input,select,textarea{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;margin-top:6px;font:inherit}
+button{border:0;background:#1267c9;color:white;border-radius:9px;padding:12px 17px;font-weight:700;cursor:pointer;margin:6px 5px 6px 0}
+button:hover{background:#094b99}
+.secondary{background:#e5edf7;color:#163e70}
+.muted{color:#607086;font-size:13px}
+.metric{background:#edf5ff;border-radius:11px;padding:15px}
+.metric strong{font-size:23px;display:block;margin:6px 0}
+.good{color:#08764a}
+.warn{color:#a45b00}
+.error{color:#b42318}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:10px;border-bottom:1px solid #e2e8f0;text-align:left}
+th{background:#f1f5fa}
+.scroll{overflow:auto}
+.hidden{display:none}
+#bars{display:flex;align-items:end;height:135px;gap:2px;margin:15px 0}
+.bar{flex:1;min-width:3px;background:#a9c4e5}
+.bar.active{background:#1165c7}
+small{font-size:12px}
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>⚡ BMW i4 · Carga inteligente</h1>
+<p>¿Cargo hoy o espero a mañana?</p>
+<small>Planificador económico de recarga</small>
+</header>
+
+<section class="card">
+<h2>1. Configuración del vehículo</h2>
+<div class="grid">
+<div class="metric">Batería útil<strong>81,3 kWh</strong></div>
+<div class="metric">Potencia contratada<strong>7,4 kW</strong></div>
+<div class="metric">Consumo de casa<strong>0,4 kW</strong></div>
+<div class="metric">Potencia disponible<strong>7,0 kW</strong></div>
+</div>
+<p class="muted">BMW i4 eDrive40 · Instalación monofásica · V2C Trydan con balanceo dinámico. El cálculo supone un consumo doméstico constante.</p>
+</section>
+
+<section class="card">
+<h2>2. Datos de la recarga</h2>
+<div class="grid">
+<label>Batería actual (%)
+<input id="soc" type="number" min="0" max="100" value="40"></label>
+<label>Batería objetivo (%)
+<input id="target" type="number" min="0" max="100" value="80"></label>
+<label>Fecha y hora de conexión
+<input id="start" type="datetime-local"></label>
+<label>Fecha y hora límite
+<input id="end" type="datetime-local"></label>
+<label>Pérdidas de recarga (%)
+<input id="loss" type="number" value="10" min="0" max="30"></label>
+</div>
+</section>
+
+<section class="card">
+<h2>3. Tarifa eléctrica</h2>
+<label>Selecciona tu tarifa
+<select id="tariff">
+<option value="pvpc">PVPC · Precio horario</option>
+<option value="fixed">Precio fijo 24 horas</option>
+<option value="periods">Tarifa de tres periodos</option>
+</select></label>
+
+<div id="custom" class="grid hidden" style="margin-top:15px">
+<label>Precio fijo (€/kWh)
+<input id="fixed" type="number" step="0.0001" value="0.15"></label>
+<label>Valle (€/kWh)
+<input id="valley" type="number" step="0.0001" value="0.10"></label>
+<label>Llano (€/kWh)
+<input id="plain" type="number" step="0.0001" value="0.16"></label>
+<label>Punta (€/kWh)
+<input id="peak" type="number" step="0.0001" value="0.23"></label>
+</div>
+
+<h3>Impuestos</h3>
+<div class="grid">
+<label>IVA (%)
+<input id="vat" type="number" step="0.1" value="21"></label>
+<label>Impuesto eléctrico (%)
+<input id="electricTax" type="number" step="0.000001" value="5.11269632"></label>
+</div>
+<p class="muted">Los precios de las tarifas manuales deben introducirse antes de impuestos. Comprueba que coincidan con tu contrato. Los impuestos son configurables.</p>
+</section>
+
+<section class="card" id="pvpcPanel">
+<h2>4. Precios PVPC</h2>
+<p>La aplicación intentará obtener los precios publicados. Si no puede acceder a ellos, podrás introducirlos manualmente.</p>
+<button id="downloadPrices">Actualizar precios</button>
+<p id="priceStatus" class="muted">Todavía no se han cargado precios.</p>
+
+<details>
+<summary>Introducir precios manualmente</summary>
+<p class="muted">Una línea por hora, con fecha y precio en €/kWh. Utiliza punto decimal.</p>
+<textarea id="priceText" rows="6" placeholder="2026-10-28 00:00;0.120
+2026-10-28 01:00;0.105"></textarea>
+<button id="importPrices" class="secondary">Importar precios</button>
+</details>
+<p class="muted">Fuente de referencia:
+<a href="https://www.esios.ree.es/es/analisis/1001" target="_blank" rel="noopener">ESIOS / Red Eléctrica</a>.
+Los precios del día siguiente suelen publicarse la tarde anterior. La consulta automática depende de que el proveedor permita el acceso desde el navegador.</p>
+</section>
+
+<section class="card">
+<h2>5. Comparar escenarios</h2>
+<button id="calculate">Calcular mejor recarga</button>
+<div id="summary"></div>
+<div id="comparison" class="grid"></div>
+<div id="recommendation"></div>
+<div id="bars"></div>
+<div id="schedule" class="scroll"></div>
+</section>
+
+<section class="card">
+<h2>Información del cálculo</h2>
+<p class="muted">
+Se optimiza el término variable de energía. No se incluyen potencia contratada, alquiler de contador ni otros costes fijos. La aplicación no controla directamente el Trydan. Los precios ausentes no se sustituyen por estimaciones. El cálculo de tres periodos usa los horarios generales peninsulares 2.0TD y no contempla festivos nacionales entre semana.
+</p>
+</section>
+</main>
+
+<script>
+"use strict";
+
+const $=id=>document.getElementById(id);
+const prices=new Map();
+const POWER=7.0;
+const CAPACITY=81.3;
+const pad=n=>String(n).padStart(2,"0");
+const money=n=>n.toLocaleString("es-ES",{
+style:"currency",currency:"EUR"
+});
+const num=id=>Number($(id).value);
+const fmt=d=>d.toLocaleString("es-ES",{
+dateStyle:"short",timeStyle:"short"
+});
+const key=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:00`;
+
+function localInput(d){
+return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+const now=new Date();
+now.setMinutes(0,0,0);
+$("start").value=localInput(now);
+$("end").value=localInput(new Date(now.getTime()+36*3600000));
+
+$("tariff").onchange=()=>{
+const mode=$("tariff").value;
+$("custom").classList.toggle("hidden",mode==="pvpc");
+$("pvpcPanel").classList.toggle("hidden",mode!=="pvpc");
+};
+
+function getRate(date){
+const mode=$("tariff").value;
+if(mode==="fixed")return num("fixed");
+
+if(mode==="periods"){
+const day=date.getDay();
+const h=date.getHours();
+if(day===0||day===6||h<8)return num("valley");
+if((h>=10&&h<14)||(h>=18&&h<22))return num("peak");
+return num("plain");
+}
+return prices.get(key(date));
+}
+
+function taxFactor(){
+return (1+num("electricTax")/100)*(1+num("vat")/100);
+}
+
+$("importPrices").onclick=()=>{
+let count=0,invalid=0;
+for(const line of $("priceText").value.split("\n")){
+if(!line.trim())continue;
+const match=line.trim().match(
+/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2});\s*(-?\d+(?:[.,]\d+)?)$/
+);
+if(!match){invalid++;continue;}
+const price=Number(match[3].replace(",","."));
+if(!Number.isFinite(price)){invalid++;continue;}
+prices.set(`${match[1]} ${match[2]}`,price);
+count++;
+}
+$("priceStatus").textContent=
+`${count} precios importados. ${invalid} filas inválidas.`;
+};
+
+$("downloadPrices").onclick=async()=>{
+const status=$("priceStatus");
+status.textContent="Consultando precios…";
+const start=new Date($("start").value);
+const base=Number.isFinite(+start)?start:new Date();
+const dates=[
+new Date(base.getFullYear(),base.getMonth(),base.getDate()),
+new Date(base.getFullYear(),base.getMonth(),base.getDate()+1)
+];
+
+const results=[];
+const today=new Date();
+const todayStr=key(today).slice(0,10);
+
+for(const date of dates){
+const day=key(date).slice(0,10);
+const tomorrow=new Date(today.getFullYear(),today.getMonth(),today.getDate()+1);
+const tomorrowStr=key(tomorrow).slice(0,10);
+
+if(day!==todayStr&&day!==tomorrowStr){
+results.push(`${day}: consulta automática no disponible`);
+continue;
+}
+
+const which=day===todayStr?"hoy":"manana";
+
+try{
+const response=await fetch(
+`https://preciluz.com/datos/precio-${which}.json`,
+{cache:"no-store"}
+);
+if(!response.ok)throw new Error("Servidor no disponible");
+const data=await response.json();
+if(!Array.isArray(data.horas)||data.fecha!==day)
+throw new Error("Formato o fecha no válidos");
+
+let count=0;
+const loaded=new Map();
+for(const hour of data.horas){
+const h=Number(hour.hora);
+const price=Number(hour.pvpc);
+if(Number.isInteger(h)&&h>=0&&h<=23&&
+Number.isFinite(price)){
+loaded.set(`${day} ${pad(h)}:00`,price);
+count++;
+}
+}
+if(count!==24)
+throw new Error("No hay 24 precios válidos");
+
+for(const [k,v] of loaded)prices.set(k,v);
+results.push(`${day}: 24 precios cargados`);
+}catch(e){
+results.push(`${day}: sin datos automáticos (${e.message})`);
+}
+}
+status.textContent=results.join(" · ");
+};
+
+function makeSlots(start,end){
+const slots=[];
+for(let t=+start;t<+end;){
+const d=new Date(t);
+const next=Math.min(
+Math.floor(t/3600000)*3600000+3600000,
++end
+);
+if(next<=t)break;
+slots.push({
+date:d,
+time:t,
+duration:(next-t)/3600000,
+price:getRate(d),
+energy:0
+});
+t=next;
+}
+return slots;
+}
+
+function optimize(slots,energy,mode){
+if(slots.some(s=>!Number.isFinite(s.price)))
+return {error:"Faltan precios para algunas horas"};
+
+if(slots.some(s=>s.price<0)&&$("tariff").value!=="pvpc")
+return {error:"Revisa los precios introducidos"};
+
+const capacity=slots.reduce(
+(sum,s)=>sum+s.duration*POWER,0
+);
+if(capacity+1e-7<energy)
+return {error:"No hay tiempo suficiente"};
+
+const ordered=mode==="cheap"
+?[...slots].sort((a,b)=>a.price-b.price||a.time-b.time)
+:slots;
+
+let remaining=energy;
+for(const s of ordered){
+const take=Math.min(remaining,s.duration*POWER);
+s.energy=Math.max(0,take);
+remaining-=take;
+if(remaining<1e-8)break;
+}
+
+return {
+slots,
+cost:slots.reduce((sum,s)=>sum+s.energy*s.price,0)
+};
+}
+
+function scenario(title,result,factor){
+if(result.error){
+return `<div class="metric"><span>${title}</span>
+<strong>No viable</strong>
+<small>${result.error}</small></div>`;
+}
+return `<div class="metric"><span>${title}</span>
+<strong>${money(result.cost*factor)}</strong>
+<small>Sin impuestos: ${money(result.cost)}</small>
+</div>`;
+}
+
+$("calculate").onclick=()=>{
+const start=new Date($("start").value);
+const end=new Date($("end").value);
+const soc=num("soc");
+const target=num("target");
+const loss=num("loss")/100;
+const summary=$("summary");
+const comparison=$("comparison");
+const recommendation=$("recommendation");
+const schedule=$("schedule");
+
+comparison.innerHTML="";
+recommendation.innerHTML="";
+schedule.innerHTML="";
+$("bars").innerHTML="";
+
+if(!Number.isFinite(+start)||!Number.isFinite(+end)||
+end<=start||soc<0||target>100||target<=soc||
+loss<0||loss>=1||num("vat")<0||num("electricTax")<0){
+summary.innerHTML='<p class="error">Revisa los datos de entrada.</p>';
+return;
+}
+
+const energy=CAPACITY*(target-soc)/100/(1-loss);
+const duration=energy/POWER;
+const factor=taxFactor();
+
+summary.innerHTML=`
+<p><b>Energía de red:</b> ${energy.toFixed(2)} kWh<br>
+<b>Tiempo mínimo:</b> ${duration.toFixed(2)} horas<br>
+<b>Energía almacenada:</b> ${(energy*(1-loss)).toFixed(2)} kWh</p>`;
+
+const midnight=new Date(
+start.getFullYear(),start.getMonth(),start.getDate()+1
+);
+const tomorrowStart=new Date(Math.max(+start,+midnight));
+
+const immediate=optimize(makeSlots(start,end),energy,"now");
+const best=optimize(makeSlots(start,end),energy,"cheap");
+const tomorrow=tomorrowStart<end
+?optimize(makeSlots(tomorrowStart,end),energy,"cheap")
+:{error:"La fecha límite es hoy"};
+
+comparison.innerHTML=
+scenario("Cargar inmediatamente",immediate,factor)+
+scenario("Esperar a mañana",tomorrow,factor)+
+scenario("Horario más barato",best,factor);
+
+if(best.error){
+recommendation.innerHTML=
+`<p class="warn">No es posible calcular un plan fiable: ${best.error}.
+Comprueba los precios disponibles y el plazo de recarga.</p>`;
+return;
+}
+
+let conclusion="";
+if(tomorrow.error){
+conclusion="No puedes completar toda la recarga esperando a mañana, o faltan precios para verificarlo.";
+}else{
+const difference=tomorrow.cost-best.cost;
+if(difference<0.005){
+conclusion="Puedes esperar a mañana sin un sobrecoste apreciable respecto al plan óptimo.";
+}else{
+conclusion=`Conviene aprovechar algunas horas antes de mañana.
+Esperar supondría ${money(difference*factor)} adicionales.`;
+}
+}
+
+const savings=immediate.error?null:immediate.cost-best.cost;
+
+recommendation.innerHTML=`
+<h3>Recomendación</h3>
+<p class="good"><b>${conclusion}</b></p>
+<p>Ahorro frente a cargar inmediatamente:
+<b>${savings===null?"No calculable":money(Math.max(0,savings)*factor)}</b>
+con impuestos.</p>
+<p class="muted">Sin impuestos:
+${savings===null?"No calculable":money(Math.max(0,savings))}.</p>`;
+
+const slots=best.slots;
+const min=Math.min(...slots.map(s=>s.price));
+const max=Math.max(...slots.map(s=>s.price));
+
+$("bars").innerHTML=slots.map(s=>{
+const height=10+90*(s.price-min)/(max-min||1);
+return `<div class="bar ${s.energy>0?"active":""}"
+style="height:${height}%"
+title="${fmt(s.date)}: ${s.price.toFixed(4)} €/kWh"></div>`;
+}).join("");
+
+schedule.innerHTML=`
+<h3>Programación recomendada</h3>
+<table>
+<thead><tr>
+<th>Fecha y hora</th>
+<th>€/kWh</th>
+<th>kWh</th>
+<th>Coste con impuestos</th>
+<th>Acción</th>
+</tr></thead>
+<tbody>
+${slots.map(s=>`<tr>
+<td>${fmt(s.date)}</td>
+<td>${s.price.toFixed(4)}</td>
+<td>${s.energy.toFixed(2)}</td>
+<td>${money(s.energy*s.price*factor)}</td>
+<td>${s.energy>0.00001?"Cargar":"Esperar"}</td>
+</tr>`).join("")}
+</tbody></table>`;
+};
+</script>
+</body>
+</html>
